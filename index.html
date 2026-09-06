@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Agent QA Workbench – Hibajegy & Elemző</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Valódi formázott Excel (.xlsx) generáló motor -->
+  <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen p-4 md:p-8 font-sans">
+  <div class="max-w-6xl mx-auto space-y-6">
+    
+    <!-- Fejléc -->
+    <header class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-xl font-black tracking-tight text-slate-900 flex items-center gap-2">
+          <span class="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-sm shadow-sm">🐞</span>
+          AI Agent QA Workbench & Ticket Studio
+        </h1>
+        <p class="text-xs text-slate-500 mt-1">Strukturált tesztnapló, szemantikai Diff összehasonlító és hibaosztályozó környezet</p>
+      </div>
+      <div class="flex items-center gap-2 text-xs flex-wrap">
+        <button id="btn-demo-hallucination" class="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 font-medium transition">
+          Minta: Hallucináció
+        </button>
+        <button id="btn-demo-instruction" class="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 font-medium transition">
+          Minta: Utasítás-szegés
+        </button>
+        <button id="btn-reset" class="px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 font-medium transition">
+          Űrlap kiürítése
+        </button>
+      </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      
+      <!-- Bal oldali űrlap -->
+      <section class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500">1. Hibajegy adatai és kategóriák</h2>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Hiba megnevezése / Összefoglaló</label>
+          <input type="text" id="bug-title" placeholder="pl. A modell nem létező hivatkozást generált válaszként" class="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Tesztelt Ágens / Modell</label>
+            <input type="text" id="bug-agent" value="Document-QA Agent v1.2" class="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-600" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Súlyosság (Severity)</label>
+            <select id="bug-severity" class="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-600 bg-white">
+              <option value="Critical">Critical – Félrevezető / Veszélyes hiba</option>
+              <option value="Major" selected>Major – Funkcionális tévedés</option>
+              <option value="Minor">Minor – Formázási / UI elcsúszás</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Címkék -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1.5">AI Hibaosztály címkék (Failure Tags)</label>
+          <div class="flex flex-wrap gap-1.5" id="tag-container">
+            <button type="button" data-tag="Hallucination" class="tag-chip text-xs px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:border-indigo-300 transition">Hallucináció</button>
+            <button type="button" data-tag="Instruction Drift" class="tag-chip text-xs px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:border-indigo-300 transition">Utasításszegés</button>
+            <button type="button" data-tag="Guardrail Bypass" class="tag-chip text-xs px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:border-indigo-300 transition">Biztonsági szűrő (Jailbreak)</button>
+            <button type="button" data-tag="Format Violation" class="tag-chip text-xs px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:border-indigo-300 transition">Formátum hiba (JSON)</button>
+            <button type="button" data-tag="Verbosity" class="tag-chip text-xs px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 hover:border-indigo-300 transition">Túlbeszélés</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Bemenet / Tesztelt Prompt</label>
+          <textarea id="bug-prompt" rows="2" placeholder="A modellnek elküldött pontos bemenet..." class="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-600"></textarea>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Elvárt viselkedés / Válasz</label>
+            <textarea id="bug-expected" rows="3" placeholder="Mit kellett volna válaszolnia..." class="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-600"></textarea>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-700 mb-1">Tényleges hibás válasz</label>
+            <textarea id="bug-actual" rows="3" placeholder="Mit válaszolt valójában a modell..." class="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 outline-none focus:border-indigo-600"></textarea>
+          </div>
+        </div>
+
+        <!-- Képernyőkép és tallózás -->
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Képernyőkép csatolása (Ctrl+V vagy tallózás)</label>
+          <input type="file" id="file-input" accept="image/*" class="hidden" />
+          <div id="paste-drop-zone" class="border-2 border-dashed border-slate-200 rounded-xl p-3.5 text-center cursor-pointer hover:bg-slate-50 transition">
+            <span class="text-xs text-slate-500 block">Kattints a tallózáshoz, vagy nyomj <kbd class="px-1 py-0.5 bg-slate-100 rounded border border-slate-200 font-mono">Ctrl + V</kbd>-t</span>
+            <div id="preview-container" class="mt-2 hidden">
+              <img id="screenshot-preview" class="max-h-24 mx-auto rounded-lg border border-slate-200 shadow-sm" />
+              <button id="btn-remove-screenshot" class="text-[11px] text-rose-600 mt-1 hover:underline">Kép törlése</button>
+            </div>
+          </div>
+        </div>
+
+        <button id="btn-save-log" class="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-bold text-white transition flex items-center justify-center gap-2">
+          <span>💾</span> Hibajegy mentése a jegyzőkönyvbe
+        </button>
+      </section>
+
+      <!-- Jobb oldali előnézet & Elemzés -->
+      <section class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col justify-between space-y-4">
+        <div>
+          <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500">2. Elemző & Export Nézet</h2>
+            <div class="flex gap-1 bg-slate-100 p-0.5 rounded-lg text-xs font-semibold">
+              <button id="tab-markdown" class="px-2.5 py-1 rounded-md bg-white shadow-sm text-indigo-700 font-bold">Markdown</button>
+              <button id="tab-jira" class="px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900">Jira</button>
+              <button id="tab-diff" class="px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900">Diff & Elemzés</button>
+            </div>
+          </div>
+
+          <!-- Kód előnézet (Alapértelmezetten ez látszik) -->
+          <pre id="output-view" class="w-full h-80 bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs font-mono text-slate-700 overflow-auto whitespace-pre-wrap"></pre>
+          
+          <!-- Intelligens Diff nézet (Alapértelmezetten rejtve) -->
+          <div id="diff-view" class="hidden w-full h-80 bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs overflow-auto font-sans leading-relaxed">
+            <div id="diff-content" class="space-y-3"></div>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100">
+          <span id="copy-status" class="text-xs text-emerald-600 font-semibold opacity-0 transition">Vágólapra másolva!</span>
+          <div class="flex gap-2">
+            <button id="btn-download-json" class="px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700 transition">
+              JSON export
+            </button>
+            <button id="btn-copy" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-xs font-bold text-white shadow-sm transition">
+              Másolás vágólapra
+            </button>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Alsó táblázat: Rögzített jegyek -->
+    <section class="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div>
+          <h2 class="text-sm font-bold text-slate-900 flex items-center gap-2">
+            <span>📋</span> Rögzített Napi Tesztnapló (Local History)
+          </h2>
+          <p class="text-xs text-slate-500">Minden jegy megmarad az oldalon a böngésző bezárása után is.</p>
+        </div>
+        <div class="flex gap-2">
+          <button id="btn-export-excel" class="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white shadow-sm transition flex items-center gap-1.5">
+            <span>📊</span> Letöltés formázott Excelben (.xlsx)
+          </button>
+          <button id="btn-clear-history" class="px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 text-xs font-medium transition">
+            Összes törlése
+          </button>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead>
+            <tr class="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
+              <th class="py-2.5 px-3">ID</th>
+              <th class="py-2.5 px-3">Időpont</th>
+              <th class="py-2.5 px-3">Cím</th>
+              <th class="py-2.5 px-3">Modell</th>
+              <th class="py-2.5 px-3">Súlyosság</th>
+              <th class="py-2.5 px-3">Hibaosztály</th>
+              <th class="py-2.5 px-3 text-right">Művelet</th>
+            </tr>
+          </thead>
+          <tbody id="history-table-body" class="divide-y divide-slate-100 text-slate-700"></tbody>
+        </table>
+        <p id="empty-history-msg" class="text-xs text-slate-400 text-center py-6">Még nincs rögzített jegy a munkamenetben.</p>
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    const bugTitle = document.getElementById('bug-title');
+    const bugAgent = document.getElementById('bug-agent');
+    const bugSeverity = document.getElementById('bug-severity');
+    const bugPrompt = document.getElementById('bug-prompt');
+    const bugExpected = document.getElementById('bug-expected');
+    const bugActual = document.getElementById('bug-actual');
+    const outputView = document.getElementById('output-view');
+    const diffView = document.getElementById('diff-view');
+    const diffContent = document.getElementById('diff-content');
+    const copyStatus = document.getElementById('copy-status');
+    const screenshotPreview = document.getElementById('screenshot-preview');
+    const previewContainer = document.getElementById('preview-container');
+    const dropZone = document.getElementById('paste-drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const historyTableBody = document.getElementById('history-table-body');
+    const emptyHistoryMsg = document.getElementById('empty-history-msg');
+
+    let currentFormat = 'markdown';
+    let screenshotBase64 = null;
+    let selectedTags = [];
+    let envInfo = "Felismerés folyamatban...";
+
+    // Környezetfelismerő (Windows 11 & Brave specifikus)
+    async function detectEnvironment() {
+      const ua = navigator.userAgent;
+      let browser = "Ismeretlen böngésző";
+
+      if (navigator.brave && typeof navigator.brave.isBrave === 'function' && await navigator.brave.isBrave()) {
+        browser = "Brave";
+      } else if (ua.includes("OPR/") || ua.includes("Opera/")) {
+        browser = "Opera";
+      } else if (ua.includes("Edg/")) {
+        browser = "Microsoft Edge";
+      } else if (ua.includes("Vivaldi/")) {
+        browser = "Vivaldi";
+      } else if (ua.includes("Firefox/")) {
+        browser = "Mozilla Firefox";
+      } else if (ua.includes("Chrome/") && !ua.includes("Chromium/")) {
+        browser = "Google Chrome";
+      } else if (ua.includes("Safari/") && !ua.includes("Chrome/")) {
+        browser = "Apple Safari";
+      }
+
+      let os = "Ismeretlen OS";
+      if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+        try {
+          const hint = await navigator.userAgentData.getHighEntropyValues(["platformVersion", "platform"]);
+          if (hint.platform === "Windows") {
+            const majorVersion = parseInt(hint.platformVersion.split('.')[0], 10);
+            os = majorVersion >= 13 ? "Windows 11" : "Windows 10";
+          } else if (hint.platform) {
+            os = hint.platform;
+          }
+        } catch (e) {}
+      }
+
+      if (os === "Ismeretlen OS") {
+        if (ua.includes("Windows NT 10.0")) os = "Windows 10/11";
+        else if (ua.includes("Mac OS X")) os = "macOS";
+        else if (ua.includes("Linux")) os = "Linux";
+      }
+
+      return `${os} | ${browser}`;
+    }
+
+    detectEnvironment().then(res => {
+      envInfo = res;
+      updatePreview();
+    });
+
+    // Címkék kezelése
+    document.querySelectorAll('.tag-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const tag = chip.getAttribute('data-tag');
+        if (selectedTags.includes(tag)) {
+          selectedTags = selectedTags.filter(t => t !== tag);
+          chip.classList.remove('bg-indigo-50', 'border-indigo-600', 'text-indigo-700', 'font-bold');
+        } else {
+          selectedTags.push(tag);
+          chip.classList.add('bg-indigo-50', 'border-indigo-600', 'text-indigo-700', 'font-bold');
+        }
+        updatePreview();
+        if (currentFormat === 'diff') renderDiff();
+      });
+    });
+
+    // INTELLIGENS DIFF ÉS ELEMZŐ LOGIKA
+    function renderDiff() {
+      const expText = bugExpected.value.trim();
+      const actText = bugActual.value.trim();
+
+      if (!expText && !actText) {
+        diffContent.innerHTML = '<p class="text-slate-400 text-center py-8">Töltsd ki az Elvárt és a Tényleges viselkedés mezőket az elemzéshez.</p>';
+        return;
+      }
+
+      // Szavak tisztítása az összehasonlításhoz (írásjelek nélkül)
+      const cleanWord = w => w.toLowerCase().replace(/[^\w\sáéíóöőúüű]/gi, '');
+      const expWords = expText ? expText.split(/\s+/) : [];
+      const actWords = actText ? actText.split(/\s+/) : [];
+
+      const expWordsClean = expWords.map(cleanWord).filter(Boolean);
+      const actWordsClean = actWords.map(cleanWord).filter(Boolean);
+
+      // Tartalmazási arány (Coverage): Az elvárt tartalom hány százaléka található meg a kapott válaszban
+      const matchesInActual = expWordsClean.filter(w => actWordsClean.includes(w));
+      const coveragePercent = expWordsClean.length > 0 
+        ? Math.round((matchesInActual.length / expWordsClean.length) * 100) 
+        : 0;
+
+      // Kifejezett utasítás/formátum hiba jelölés ellenőrzése
+      const isExplicitInstructionIssue = selectedTags.includes('Instruction Drift') || 
+                                         selectedTags.includes('Format Violation') || 
+                                         selectedTags.includes('Verbosity');
+
+      // Hallucináció mód feltétele: Kifejezett Hallucination címke ÉS nincs utasításszegés, VAGY nincs utasításszegés és a lefedettség < 25%
+      const isHallucinationMode = (selectedTags.includes('Hallucination') && !isExplicitInstructionIssue) || 
+                                  (!isExplicitInstructionIssue && coveragePercent < 25);
+
+      // 1. ESET: VALÓDI HALLUCINÁCIÓ -> Szemantikai Ground Truth vs. Fabricated kártyák
+      if (isHallucinationMode) {
+        diffContent.innerHTML = `
+          <div class="bg-rose-50 border border-rose-200 rounded-xl p-3 flex items-center justify-between text-xs text-rose-900">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+              <span class="font-bold">Tartalmi Eltérés / Fiktív Állítás (Hallucináció)</span>
+            </div>
+            <span class="px-2 py-0.5 rounded-md bg-white border border-rose-200 font-mono text-[11px] font-bold">Tényalap fedettség: ${coveragePercent}%</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+            <div class="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-800">🎯 Referencia Tényalap (Elvárt)</span>
+                <span class="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Ground Truth</span>
+              </div>
+              <p class="text-xs text-slate-800 leading-relaxed font-mono bg-white p-2.5 rounded-lg border border-emerald-100">${expText || '-'}</p>
+            </div>
+
+            <div class="bg-rose-50/70 border border-rose-200 rounded-xl p-3">
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-rose-800">❌ Kitalált / Nem Validált Állítás</span>
+                <span class="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-bold">Fabricated</span>
+              </div>
+              <p class="text-xs text-slate-800 leading-relaxed font-mono bg-white p-2.5 rounded-lg border border-rose-100">${actText || '-'}</p>
+            </div>
+          </div>
+          <div class="text-[11px] text-slate-500 italic bg-white p-2 rounded-lg border border-slate-200">
+            💡 <strong>QA Megjegyzés:</strong> A modell fiktív forrásra vagy nem létező információra hivatkozott.
+          </div>
+        `;
+        return;
+      }
+
+      // 2. ESET: UTASÍTÁSSZEGÉS / TÚLBESZÉLÉS / FORMÁTUMHIBA -> Szószintű kihúzás
+      let htmlExpected = expWords.map(word => {
+        const clean = cleanWord(word);
+        const matches = actWordsClean.includes(clean);
+        return matches 
+          ? `<span>${word}</span>` 
+          : `<span class="bg-emerald-100 text-emerald-800 px-1 py-0.5 rounded font-semibold border border-emerald-300">${word}</span>`;
+      }).join(' ');
+
+      let htmlActual = actWords.map(word => {
+        const clean = cleanWord(word);
+        const matches = expWordsClean.includes(clean);
+        return matches 
+          ? `<span class="font-semibold text-slate-900">${word}</span>` 
+          : `<span class="bg-rose-100 text-rose-800 px-1 py-0.5 rounded font-semibold border border-rose-300 line-through">${word}</span>`;
+      }).join(' ');
+
+      diffContent.innerHTML = `
+        <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-3 flex items-center justify-between text-xs text-indigo-950 mb-3">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+            <span class="font-bold">Utasításszegés / Kimeneti Többlet Elemzés</span>
+          </div>
+          <span class="px-2 py-0.5 rounded-md bg-white border border-indigo-200 font-mono text-[11px] font-bold text-indigo-700">Elvárt tartalom jelenléte: ${coveragePercent}%</span>
+        </div>
+
+        <div class="space-y-3">
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <h4 class="font-bold text-slate-700 text-xs">🎯 Elvárt tiszta kimenet:</h4>
+              <span class="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">Zöld = hiányzó részlet</span>
+            </div>
+            <div class="p-3 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-mono leading-relaxed">${htmlExpected}</div>
+          </div>
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <h4 class="font-bold text-slate-700 text-xs">❌ Modell által visszaadott válasz:</h4>
+              <span class="text-[10px] text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">Piros áthúzva = felesleges többlet / szabálysértés</span>
+            </div>
+            <div class="p-3 bg-white border border-slate-200 rounded-xl text-slate-800 text-xs font-mono leading-relaxed">${htmlActual}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    // Előnézet frissítése
+    function updatePreview() {
+      const title = bugTitle.value.trim() || 'Cím nélkül';
+      const agent = bugAgent.value.trim();
+      const severity = bugSeverity.value;
+      const prompt = bugPrompt.value.trim() || '-';
+      const expected = bugExpected.value.trim() || '-';
+      const actual = bugActual.value.trim() || '-';
+      const tagsStr = selectedTags.length ? selectedTags.join(', ') : 'Nincs';
+      const hasImage = screenshotBase64 ? '[Csatolt képernyőkép mellékelve]' : 'Nincs';
+
+      if (currentFormat === 'markdown') {
+        outputView.textContent = `### 🐞 [BUG] ${title}
+
+**Modell:** \`${agent}\`  
+**Súlyosság:** **${severity}** | **Hibaosztály:** \`${tagsStr}\`  
+**Környezet:** \`${envInfo}\`  
+**Dátum:** ${new Date().toLocaleString('hu-HU')}
+
+---
+#### 📥 Tesztelt Bemenet (Prompt)
+\`\`\`text
+${prompt}
+\`\`\`
+
+#### 🎯 Elvárt Működés
+${expected}
+
+#### ❌ Tényleges Működés
+${actual}
+
+#### 📷 Melléklet
+${hasImage}
+`;
+      } else if (currentFormat === 'jira') {
+        outputView.textContent = `h3. [BUG] ${title}
+*Modell:* {noformat}${agent}{noformat}
+*Súlyosság:* *${severity}*
+*Kategória:* ${tagsStr}
+*Környezet:* {noformat}${envInfo}{noformat}
+
+h4. Bemenet (Prompt)
+{code:text}
+${prompt}
+{code}
+
+h4. Elvárt működés
+${expected}
+
+h4. Tényleges működés
+${actual}
+`;
+      } else {
+        renderDiff();
+      }
+    }
+
+    [bugTitle, bugAgent, bugSeverity, bugPrompt, bugExpected, bugActual].forEach(el => {
+      el.addEventListener('input', () => {
+        updatePreview();
+        if (currentFormat === 'diff') renderDiff();
+      });
+    });
+
+    // Fülek kezelése
+    function setTab(activeTab) {
+      currentFormat = activeTab;
+      ['tab-markdown', 'tab-jira', 'tab-diff'].forEach(id => {
+        document.getElementById(id).className = 'px-2.5 py-1 rounded-md text-slate-600 hover:text-slate-900';
+      });
+
+      if (activeTab === 'diff') {
+        document.getElementById('tab-diff').className = 'px-2.5 py-1 rounded-md bg-white shadow-sm text-indigo-700 font-bold';
+        outputView.classList.add('hidden');
+        diffView.classList.remove('hidden');
+        renderDiff();
+      } else {
+        document.getElementById(`tab-${activeTab}`).className = 'px-2.5 py-1 rounded-md bg-white shadow-sm text-indigo-700 font-bold';
+        diffView.classList.add('hidden');
+        outputView.classList.remove('hidden');
+        updatePreview();
+      }
+    }
+
+    document.getElementById('tab-markdown').addEventListener('click', () => setTab('markdown'));
+    document.getElementById('tab-jira').addEventListener('click', () => setTab('jira'));
+    document.getElementById('tab-diff').addEventListener('click', () => setTab('diff'));
+
+    // Képernyőkép és Drag & Drop
+    dropZone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) processImageFile(e.target.files[0]);
+    });
+
+    window.addEventListener('paste', (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type.includes('image')) {
+          processImageFile(item.getAsFile());
+          break;
+        }
+      }
+    });
+
+    function processImageFile(file) {
+      if (!file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        screenshotBase64 = evt.target.result;
+        screenshotPreview.src = screenshotBase64;
+        previewContainer.classList.remove('hidden');
+        updatePreview();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    document.getElementById('btn-remove-screenshot').addEventListener('click', (e) => {
+      e.stopPropagation();
+      screenshotBase64 = null;
+      fileInput.value = '';
+      previewContainer.classList.add('hidden');
+      updatePreview();
+    });
+
+    // Minta gombok (A Markdown fül marad aktív)
+    document.getElementById('btn-demo-hallucination').addEventListener('click', () => {
+      bugTitle.value = 'Nem létező EU rendeletszám generálása';
+      bugSeverity.value = 'Critical';
+      bugPrompt.value = 'Melyik európai uniós irányelv szabályozza a tárolt biometrikus adatok kötelező törlését?';
+      bugExpected.value = 'A modell a GDPR 17. cikkét idézi a törléshez való jogról (törlési kötelezettség és specifikációk).';
+      bugActual.value = 'A modell egy nem létező 2023/8812/EU rendelet 12. cikkére hivatkozik, és arra alapozva határozott meg 30 napos kötelező határidőt.';
+      selectedTags = ['Hallucination'];
+      syncTagButtons();
+      updatePreview();
+      setTab('markdown');
+    });
+
+    document.getElementById('btn-demo-instruction').addEventListener('click', () => {
+      bugTitle.value = 'JSON kimeneti kényszer megsértése bevezető szöveggel';
+      bugSeverity.value = 'Major';
+      bugPrompt.value = 'Add vissza a páciens tüneteit JSON tömbként, bármilyen kísérőszöveg nélkül!';
+      bugExpected.value = '["fejfájás", "láz"]';
+      bugActual.value = 'Természetesen! Íme a kért JSON válasz:\n["fejfájás", "láz"]\nRemélem segíthettem!';
+      selectedTags = ['Instruction Drift', 'Format Violation'];
+      syncTagButtons();
+      updatePreview();
+      setTab('markdown');
+    });
+
+    function syncTagButtons() {
+      document.querySelectorAll('.tag-chip').forEach(chip => {
+        const tag = chip.getAttribute('data-tag');
+        if (selectedTags.includes(tag)) {
+          chip.classList.add('bg-indigo-50', 'border-indigo-600', 'text-indigo-700', 'font-bold');
+        } else {
+          chip.classList.remove('bg-indigo-50', 'border-indigo-600', 'text-indigo-700', 'font-bold');
+        }
+      });
+    }
+
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      bugTitle.value = '';
+      bugPrompt.value = '';
+      bugExpected.value = '';
+      bugActual.value = '';
+      screenshotBase64 = null;
+      selectedTags = [];
+      syncTagButtons();
+      previewContainer.classList.add('hidden');
+      updatePreview();
+      setTab('markdown');
+    });
+
+    // Vágólapra másolás
+    document.getElementById('btn-copy').addEventListener('click', () => {
+      const text = currentFormat === 'diff' ? `Elvárt:\n${bugExpected.value}\n\nTényleges:\n${bugActual.value}` : outputView.textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        copyStatus.classList.remove('opacity-0');
+        setTimeout(() => copyStatus.classList.add('opacity-0'), 2000);
+      });
+    });
+
+    // JSON export
+    document.getElementById('btn-download-json').addEventListener('click', () => {
+      const ticket = buildTicketObject();
+      const blob = new Blob([JSON.stringify(ticket, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `bug-${Date.now()}.json`;
+      a.click();
+    });
+
+    function buildTicketObject() {
+      return {
+        id: 'TICK-' + Math.floor(1000 + Math.random() * 9000),
+        time: new Date().toLocaleTimeString('hu-HU', { hour: '2-digit', minute: '2-digit' }),
+        title: bugTitle.value || 'Cím nélkül',
+        agent: bugAgent.value,
+        severity: bugSeverity.value,
+        tags: selectedTags,
+        prompt: bugPrompt.value,
+        expected: bugExpected.value,
+        actual: bugActual.value,
+        environment: envInfo,
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    // LocalStorage Jegyzőkönyv
+    function getStoredTickets() {
+      return JSON.parse(localStorage.getItem('ai_qa_workbench_tickets') || '[]');
+    }
+
+    function saveTickets(tickets) {
+      localStorage.setItem('ai_qa_workbench_tickets', JSON.stringify(tickets));
+      renderHistoryTable();
+    }
+
+    document.getElementById('btn-save-log').addEventListener('click', () => {
+      if (!bugTitle.value.trim()) {
+        alert('Adj meg legalább egy címet a hibajegy mentéséhez!');
+        return;
+      }
+      const tickets = getStoredTickets();
+      tickets.unshift(buildTicketObject());
+      saveTickets(tickets);
+    });
+
+    function renderHistoryTable() {
+      const tickets = getStoredTickets();
+      historyTableBody.innerHTML = '';
+
+      if (tickets.length === 0) {
+        emptyHistoryMsg.classList.remove('hidden');
+        return;
+      }
+      emptyHistoryMsg.classList.add('hidden');
+
+      tickets.forEach((t, index) => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 transition';
+        tr.innerHTML = `
+          <td class="py-2.5 px-3 font-mono font-bold text-indigo-700">${t.id}</td>
+          <td class="py-2.5 px-3 text-slate-500 whitespace-nowrap">${t.time || '-'}</td>
+          <td class="py-2.5 px-3 font-semibold text-slate-900">${t.title}</td>
+          <td class="py-2.5 px-3 text-slate-600">${t.agent}</td>
+          <td class="py-2.5 px-3">
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold ${t.severity === 'Critical' ? 'bg-rose-100 text-rose-700' : t.severity === 'Major' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}">${t.severity}</span>
+          </td>
+          <td class="py-2.5 px-3 text-slate-500">${t.tags?.join(', ') || '-'}</td>
+          <td class="py-2.5 px-3 text-right space-x-2 whitespace-nowrap">
+            <button onclick="loadTicket(${index})" class="text-indigo-600 hover:underline font-semibold">Betöltés</button>
+            <button onclick="deleteTicket(${index})" class="text-rose-600 hover:underline">Törlés</button>
+          </td>
+        `;
+        historyTableBody.appendChild(tr);
+      });
+    }
+
+    window.loadTicket = function(index) {
+      const t = getStoredTickets()[index];
+      if (!t) return;
+      bugTitle.value = t.title;
+      bugAgent.value = t.agent;
+      bugSeverity.value = t.severity;
+      bugPrompt.value = t.prompt;
+      bugExpected.value = t.expected;
+      bugActual.value = t.actual;
+      selectedTags = t.tags || [];
+      syncTagButtons();
+      updatePreview();
+      setTab('markdown');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    window.deleteTicket = function(index) {
+      const tickets = getStoredTickets();
+      tickets.splice(index, 1);
+      saveTickets(tickets);
+    };
+
+    document.getElementById('btn-clear-history').addEventListener('click', () => {
+      if (confirm('Törölni szeretnéd az összes mentett jegyet a böngésződből?')) {
+        saveTickets([]);
+      }
+    });
+
+    // PROFESSZIONÁLIS EXCEL (.XLSX) EXPORTÁLÁS FORMÁZÁSSAL ÉS SZÍNEKKEL
+    document.getElementById('btn-export-excel').addEventListener('click', async () => {
+      const tickets = getStoredTickets();
+      if (tickets.length === 0) {
+        alert('Még nincs mentett hibajegy a táblázatban. Kattints a "Hibajegy mentése a jegyzőkönyvbe" gombra!');
+        return;
+      }
+
+      if (typeof ExcelJS === 'undefined') {
+        alert('Az Excel motor még töltődik. Ellenőrizd az internetkapcsolatot!');
+        return;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('AI QA Tesztnapló', {
+        views: [{ showGridLines: true }]
+      });
+
+      // 1. Főcím sáv
+      sheet.mergeCells('A1:I1');
+      const titleCell = sheet.getCell('A1');
+      titleCell.value = 'AI Agent QA Desk – Napi Tesztnapló & Hibariport';
+      titleCell.font = { name: 'Segoe UI', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E1B4B' } };
+      titleCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+      sheet.getRow(1).height = 36;
+
+      // 2. Metaadat sáv
+      sheet.mergeCells('A2:I2');
+      const metaCell = sheet.getCell('A2');
+      metaCell.value = `Exportálva: ${new Date().toLocaleString('hu-HU')} | Környezet: ${envInfo} | Rögzített hibák száma: ${tickets.length}`;
+      metaCell.font = { name: 'Segoe UI', size: 9, italic: true, color: { argb: 'FF475569' } };
+      metaCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+      metaCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+      sheet.getRow(2).height = 20;
+
+      // 3. Oszlopok és szélességek
+      sheet.columns = [
+        { key: 'id', width: 14 },
+        { key: 'time', width: 12 },
+        { key: 'title', width: 30 },
+        { key: 'agent', width: 22 },
+        { key: 'severity', width: 14 },
+        { key: 'tags', width: 24 },
+        { key: 'prompt', width: 38 },
+        { key: 'expected', width: 38 },
+        { key: 'actual', width: 38 }
+      ];
+
+      // 4. Fejlécek beállítása
+      const headerRow = sheet.getRow(3);
+      headerRow.height = 26;
+      const headers = ['ID', 'Időpont', 'Hiba címe / Összefoglaló', 'Ágens / Modell', 'Súlyosság', 'Hibaosztály', 'Tesztelt Bemenet (Prompt)', 'Elvárt Viselkedés', 'Tényleges Hibás Kimenet'];
+      
+      headers.forEach((h, i) => {
+        const cell = headerRow.getCell(i + 1);
+        cell.value = h;
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF312E81' } };
+        cell.font = { name: 'Segoe UI', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.alignment = { horizontal: (i === 0 || i === 1 || i === 4) ? 'center' : 'left', vertical: 'middle' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+        };
+      });
+
+      // 5. Adatsorok feltöltése
+      tickets.forEach((t, index) => {
+        const rowNum = index + 4;
+        const row = sheet.getRow(rowNum);
+        row.height = 60;
+        const isEven = rowNum % 2 === 0;
+        const rowBg = isEven ? 'FFFAFAFA' : 'FFFFFFFF';
+
+        const values = [
+          t.id,
+          t.time || '-',
+          t.title,
+          t.agent,
+          t.severity,
+          (t.tags || []).join(', ') || '-',
+          t.prompt,
+          t.expected,
+          t.actual
+        ];
+
+        values.forEach((v, colIdx) => {
+          const cell = row.getCell(colIdx + 1);
+          cell.value = v;
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: rowBg } };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+          };
+          cell.alignment = { vertical: 'top', wrapText: true };
+
+          if (colIdx === 0) {
+            cell.font = { name: 'Consolas', size: 9, bold: true, color: { argb: 'FF3730A3' } };
+            cell.alignment = { horizontal: 'center', vertical: 'top' };
+          } else if (colIdx === 1) {
+            cell.font = { name: 'Segoe UI', size: 9, color: { argb: 'FF64748B' } };
+            cell.alignment = { horizontal: 'center', vertical: 'top' };
+          } else if (colIdx === 2) {
+            cell.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF0F172A' } };
+          } else if (colIdx === 4) {
+            cell.alignment = { horizontal: 'center', vertical: 'top' };
+            if (v === 'Critical') {
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFE4E6' } };
+              cell.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF9F1239' } };
+            } else if (v === 'Major') {
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+              cell.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF92400E' } };
+            } else {
+              cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+              cell.font = { name: 'Segoe UI', size: 9.5, bold: true, color: { argb: 'FF334155' } };
+            }
+          } else if (colIdx === 5) {
+            cell.font = { name: 'Segoe UI', size: 9, italic: true, color: { argb: 'FF4F46E5' } };
+          } else {
+            cell.font = { name: 'Segoe UI', size: 9, color: { argb: 'FF1E293B' } };
+          }
+        });
+      });
+
+      // Letöltés
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `AI-QA-Tesztnaplo-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+    });
+
+    // Indítás
+    renderHistoryTable();
+    updatePreview();
+    setTab('markdown');
+  </script>
+</body>
+</html>
